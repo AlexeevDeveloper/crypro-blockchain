@@ -1,2 +1,4 @@
 # Blockchain "CryPro"
-Simple blockchain written in python
+Простой блокчейн для криптовалюты $CPNC, написанный на Python.
+
+## Установка
