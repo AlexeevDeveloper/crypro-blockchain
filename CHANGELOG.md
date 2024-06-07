@@ -1,3 +1,9 @@
+commit 045eb236a78f75a8c05527e35b900ab51a961f7f
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Sat Jun 8 01:43:09 2024 +0700
+
+    add metadata parameter in block, improve code example, update changelog
+
 commit e4bb65f581db258f0b5732daae9fae80eb6150f6
 Author: AlexeevDeveloper <alexeev.developer@gmail.com>
 Date:   Sat Jun 8 01:26:28 2024 +0700
