@@ -1,6 +1,11 @@
 #!venv/bin/python3
 """CryPro-N Coin BlockChain
-Простой блокчейн для криптовалюты $CPNC, написанный на Python
+Невероятно быстрый, защищенный и простой Open Source блокчейн. 
+
+CryProN (крайпрон) демонстрирует основные концепции технологии блокчейна, 
+такие как транзакции, экономические модели, блоки, кошельки, механизмы
+консенсуса и многое другое.
+
 Copyright (C) 2024  Alexeev Bronislav
 
 This library is free software; you can redistribute it and/or
@@ -22,10 +27,10 @@ from blockchain import BlockChainConfig, BlockChain, ConsensusAlgorithm
 
 config = BlockChainConfig(
 	coin_name="MyToken",
-	emission=100.0,
+	total_supply=100.0,
 	decimal_places=9,
-	mining_reward=1.0,
-	difficulty=4,
+	mining_reward=10.0,
+	difficulty=1,
 	consensus_algorithm=ConsensusAlgorithm.PROOF_OF_WORK
 )
 
@@ -37,12 +42,19 @@ wallet2 = blockchain.create_wallet('Bob', 0.5)
 tx1 = wallet1.send_transaction(wallet2, 9.5)
 
 if tx1:
-	blockchain.process_transaction(tx1)
+	blockchain.pending_transaction(tx1)
 
 blockchain.mine_block(wallet1)
+blockchain.mine_block(wallet2)
 
 print('W1:', wallet1.balance)
 print('W2:', wallet2.balance)
 
 if blockchain.validate_chain():
 	print('YES')
+else:
+	print('NO')
+
+print('Остаток монет в сети:', blockchain.get_remaining_supply())
+
+print(len(blockchain.chain))

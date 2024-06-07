@@ -1,3 +1,9 @@
+commit 36900538c086408d0671988af7bab505c63e0dea
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Fri Jun 7 01:30:20 2024 +0700
+
+    add base blockchain architecture (wallet, transaction, block, blockchain)
+
 commit 0258a4911e5b95f9d7755b777d88def02d55702f
 Author: AlexeevDeveloper <alexeev.developer@gmail.com>
 Date:   Wed Jun 5 20:17:10 2024 +0700
