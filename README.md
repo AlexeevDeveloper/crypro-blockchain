@@ -1,4 +1,7 @@
 <p align="center">Open-Source блокчейн на Python</p>
+<p align='center'>
+	![LOGO](./extra/cryptocoin.png)
+</p>
 <br>
 <p align="center">
     <img src="https://img.shields.io/github/languages/top/AlexeevDeveloper/crypro-blockchain?style=for-the-badge">
