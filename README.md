@@ -1,6 +1,6 @@
 <p align="center">Open-Source блокчейн на Python</p>
 <p align='center'>
-	![LOGO](./extra/cryptocoin.png)
+	<img src="./extra/cryprocoin.png">
 </p>
 <br>
 <p align="center">
