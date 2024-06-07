@@ -57,4 +57,9 @@ else:
 
 print('Остаток монет в сети:', blockchain.get_remaining_supply())
 
-print(len(blockchain.chain))
+for block in blockchain.chain:
+	print('-----------')
+	print(f'Блок #{block.index}')
+	print(f'Время: {block.timestamp}')
+	print(f'Хеш: {block.hash.hex()}')
+	print(f'Хеш предыдущего блока: {block.previous_hash.hex()}')

@@ -20,7 +20,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 import ecdsa
 from datetime import datetime
 from hashlib import sha256
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -230,17 +230,19 @@ class Block:
 	 + Индекс
 	 + Список транзакций
 	 + Хеш предыдущего блока
+	 + Мета-данные
 	 + Метка времени
 	 + Специальное число nonce (для PoW)
 	"""
 	def __init__(self, index: int, transactions: List[Transaction], previous_hash: bytes, 
-				timestamp: Optional[datetime]=None, nonce: int=0) -> None:
+				metadata: Dict=None, timestamp: Optional[datetime]=None, nonce: int=0) -> None:
 		"""
 		Инициализация блока
 
 		:param index: Индекс блока
 		:param transactions: Список транзакций
 		:param previous_hash: Хеш предыдущего блока
+		:param metadata: Мета-данные в произвольном формате
 		:param timestamp: Метка времени
 		:param nonce: Спец.число Nonce
 		"""
@@ -249,6 +251,7 @@ class Block:
 		self.previous_hash: bytes = previous_hash
 		self.timestamp: datetime = timestamp or datetime.now()
 		self.nonce: int = nonce
+		self.metadata: Dict = metadata
 		logger.debug(f'Created new block with timestamp {self.timestamp} and index {self.index}')
 
 	@property
@@ -258,7 +261,7 @@ class Block:
 
 		:return: Хеш блока в виде байтов
 		"""
-		block_data = f'{self.index},{[t.to_bytes().decode() for t in self.transactions]},{self.previous_hash.hex()},{self.timestamp.isoformat()},{self.nonce}'.encode()
+		block_data = f'{self.index},{[t.to_bytes().decode() for t in self.transactions]},{self.previous_hash.hex()},{self.metadata},{self.timestamp.isoformat()},{self.nonce}'.encode()
 		return sha256(block_data).digest()
 
 	def mine(self, difficulty: int) -> None:
@@ -361,7 +364,12 @@ class BlockChain:
 		if self.config.consensus_algorithm == ConsensusAlgorithm.PROOF_OF_WORK:
 			# Если механизм консенсуса - PoW
 			if self.pending_transactions:
-				block = Block(len(self.chain), self.pending_transactions, self.chain[-1].hash)
+				block = Block(len(self.chain), self.pending_transactions, 
+							self.chain[-1].hash, metadata={
+								'account': wallet.public_key.to_string().hex(),
+								'action': 'mine'
+							}
+				)
 				block.mine(self.config.difficulty)
 				self.add_block(block)
 
@@ -434,12 +442,17 @@ class BlockChain:
 		
 		if sender_wallet and recipient_wallet:
 			logger.info(f'Transfer transaction: {transaction.amount} {self.config.coin_name} from {transaction.sender_wallet.to_string().hex()} -> {transaction.recipient_wallet.to_string().hex()}')
-			# sender_wallet.send_transaction(recipient_wallet, transaction.amount)
-			# sender_wallet.withdraw(transaction.amount)
 			recipient_wallet.receive_transaction(transaction)
 
 			self.pending_transactions.append(transaction)
-			self.add_block(Block(len(self.chain), self.pending_transactions, self.chain[-1].hash))
+			self.add_block(Block(len(self.chain), 
+							self.pending_transactions, 
+							self.chain[-1].hash,
+							metadata={
+								'account': sender_wallet.public_key.to_string().hex(),
+								'action': 'transfer',
+								'recipient': recipient_wallet.public_key.to_string().hex()
+							}))
 			return True
 		else:
 			return False

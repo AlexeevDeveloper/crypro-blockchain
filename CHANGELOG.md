@@ -1,3 +1,21 @@
+commit e4bb65f581db258f0b5732daae9fae80eb6150f6
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Sat Jun 8 01:26:28 2024 +0700
+
+    fix docs
+
+commit 4c3b9c3d234d9934b44b8cdc6f1e947f112b2bae
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Sat Jun 8 01:25:45 2024 +0700
+
+    fix docs
+
+commit 919f8b7c7b52c39afbb935ae9dceabed0351bedc
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Sat Jun 8 01:20:56 2024 +0700
+
+    update changelog
+
 commit 937a90b1187b5596497a2ca5913ff2cb3c458e4a
 Author: AlexeevDeveloper <alexeev.developer@gmail.com>
 Date:   Sat Jun 8 01:20:24 2024 +0700
