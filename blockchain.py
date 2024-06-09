@@ -17,7 +17,6 @@ You should have received a copy of the GNU Lesser General Public
 License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 """
-import ecdsa
 from datetime import datetime
 from hashlib import sha256
 from typing import List, Tuple, Optional, Dict
@@ -26,6 +25,7 @@ from enum import Enum
 import logging
 import os
 from time import time
+import ecdsa
 
 # Настройка логирования #
 logger = logging.getLogger(__name__)
@@ -69,6 +69,19 @@ class ConsensusAlgorithm(Enum):
 	PROOF_OF_STAKE: str = "proof_of_stake"
 
 
+class TransactionStatus(Enum):
+	"""
+	Статус транзакции.
+
+	 + PENDING/в обработке - 1
+	 + CONFIRMED/подтвержден - 2
+	 + FAILED/провал - 3
+	"""
+	PENDING = 1
+	CONFIRMED = 2
+	FAILED = 3
+
+
 @dataclass
 class BlockChainConfig:
 	"""
@@ -80,13 +93,18 @@ class BlockChainConfig:
 	 + Награда для майнеров
 	 + Сложность добычи блоков
 	 + Алгоритм консенсуса
+	 + Комиссия за транзакцию
+	 + Рост инфляции
+	 + Максимальное время добычи блока для обновления сложности (в секундах)
 	"""
 	coin_name: str
-	total_supply: float
-	decimal_places: int
+	max_supply: float
 	mining_reward: float = 10.0
 	difficulty: int = 2
 	consensus_algorithm: ConsensusAlgorithm = ConsensusAlgorithm.PROOF_OF_WORK
+	transaction_fee: float = 1.0
+	inflation_rate: float = 0.02
+	difficulty_update_time: int = 60
 
 
 class Wallet:
@@ -97,6 +115,7 @@ class Wallet:
 	 + Имя владельца
 	 + Начальный баланс
 	 + Приватный и публичный ключ
+	 + История транзакций
 	"""
 	def __init__(self, name: str, initial_balance: float=0.0) -> None:
 		"""
@@ -108,6 +127,7 @@ class Wallet:
 		self.name: str = name
 		self.balance: float = initial_balance
 		self.private_key, self.public_key = self.generate_key_pair()
+		self.transactions_history: Dict = {}
 		logger.info(f'Created new wallet with public key: {self.public_key.to_string().hex()}; and balance: {self.balance}')
 
 	def generate_key_pair(self) -> Tuple:
@@ -133,7 +153,7 @@ class Wallet:
 		"""
 		return self.private_key.sign(transaction.to_bytes())
 
-	def send_transaction(self, recipient: 'Wallet', amount: float) -> 'Transaction':
+	def send_transaction(self, recipient: 'Wallet', amount: float, fee: float) -> 'Transaction':
 		"""
 		Метод для отправки транзакции до получателя.
 
@@ -144,12 +164,15 @@ class Wallet:
 
 		:return: Подписанная транзакция
 		"""
-		if self.balance >= amount:
-			self.withdraw(amount)
-			transaction = Transaction(self.public_key, recipient.public_key, amount)
+		if self.balance >= amount + fee:
+			self.withdraw(amount + fee)
+			transaction = Transaction(self.public_key, recipient.public_key, amount, fee)
 			transaction.sign(self)
-			logger.info(f'Sent transaction: {transaction}')
+			logger.info(f'Send transaction: {transaction}')
 			return transaction
+		elif self.balance >= amount and self.balance < amount + fee:
+			logger.warning(f'Insufficient funds to pay comission to send transaction from wallet: {self.public_key.to_string().hex()}')
+			return None
 		else:
 			logger.warning(f'Insufficient funds to send transaction from wallet: {self.public_key.to_string().hex()}')
 			return None
@@ -160,7 +183,7 @@ class Wallet:
 
 		:param amount: Сумма средств для снятия
 		"""
-		logger.info(f'Withdraw amount {amount} from wallet {self.public_key.to_string().hex()}')
+		logger.debug(f'Withdraw amount {amount} from wallet {self.public_key.to_string().hex()}')
 		self.balance -= amount
 
 	def receive_transaction(self, transaction: 'Transaction') -> None:
@@ -169,7 +192,7 @@ class Wallet:
 
 		:param transaction: Транзакция
 		"""
-		logger.info(f'Receive amount {transaction.amount} from wallet {self.public_key.to_string().hex()}')
+		logger.debug(f'Receive amount {transaction.amount} from wallet {self.public_key.to_string().hex()}')
 		self.balance += transaction.amount
 
 
@@ -182,22 +205,28 @@ class Transaction:
 	 + Сумма средств
 	 + Метка времени
 	 + Сигнатура
+	 + Комиссия за перевод внутри сети
+	 + Статус транзакции
+	 + Комиссия за транзакцию
 	"""
 	def __init__(self, sender_wallet: bytes, recipient_wallet: bytes, 
-				amount: float, timestamp: Optional[datetime]=None) -> None:
+				amount: float, fee: float, timestamp: Optional[datetime]=None) -> None:
 		"""
 		Инициализация транзакции
 
 		:param sender_wallet: Публичный ключ кошелька отправителя
 		:param recipient_wallet: Публичный ключ кошелька получателя
 		:param amount: Сумма средств
+		:param fee: Комиссия
 		:param timestamp: Метка времени
 		"""
 		self.sender_wallet: bytes = sender_wallet
 		self.recipient_wallet: bytes = recipient_wallet
 		self.amount: float = amount
+		self.fee: float = fee
 		self.timestamp: datetime = timestamp or datetime.now()
 		self.signature: Optional[bytes] = None
+		self.status = TransactionStatus.PENDING
 		logger.debug(f'Create new transaction: {self.sender_wallet.to_string().hex()} -> {self.recipient_wallet.to_string().hex()}')
 
 	def sign(self, wallet: Wallet) -> None:
@@ -295,6 +324,11 @@ class BlockChain:
 	 + Список неподтвержденных транзакций
 	 + Список кошельков, участвующих в сети
 	 + Остаток монет в сети
+	 + Максимальное количество монет
+	 + Количество намайненных монет
+	 + Рост инфляции
+	 + Комиссия за транзакцию
+	 + Последнее время добычи блока
 	"""
 	def __init__(self, config: BlockChainConfig) -> None:
 		"""
@@ -306,7 +340,12 @@ class BlockChain:
 		self.chain: list = [self.create_genesis_block()]
 		self.pending_transactions: List[Transaction] = []
 		self.wallets: list = list()
-		self.remaining_supply: float = self.config.total_supply
+		self.remaining_supply: float = self.config.max_supply
+		self.max_supply: float = self.config.max_supply
+		self.transaction_fee: float = self.config.transaction_fee
+		self.inflation_rate: float = self.config.inflation_rate
+		self.total_mined_coins: int = 0
+		self.last_update_time = datetime.now()
 
 	def create_genesis_block(self) -> Block:
 		"""
@@ -314,6 +353,7 @@ class BlockChain:
 
 		:return: Блок с хешем из 64 нуля
 		"""
+		logger.debug('Create genesis block for blockchain')
 		return Block(0, [], str("0" * 64).encode(), datetime.now())
 
 	def add_block(self, block: Block) -> bool:
@@ -332,27 +372,6 @@ class BlockChain:
 			logger.error(f'New block {block.hash} was not added: {e}')
 			return False
 
-	def validate_chain(self) -> bool:
-		"""
-		Метод проверки цепи блоков.
-
-		Сверяется предыдущий хеш текущего блока и хеш предыдущего блока.
-
-		:return: True если цепь валидна, False в противном случае
-		"""
-		try:
-			for i in range(1, len(self.chain)):
-				current_block = self.chain[i]
-				previous_block = self.chain[i - 1]
-
-				if current_block.previous_hash != previous_block.hash:
-					return False
-
-			return True
-		except Exception as ex:
-			logger.error(f'Error when validate chain: {ex}')
-			return False
-
 	def mine_block(self, wallet: Wallet) -> bool:
 		"""
 		Добыча блока пользователем на определенный кошелёк.
@@ -363,6 +382,11 @@ class BlockChain:
 		"""
 		if self.config.consensus_algorithm == ConsensusAlgorithm.PROOF_OF_WORK:
 			# Если механизм консенсуса - PoW
+			if self.remaining_supply <= self.config.mining_reward:
+				print('Error: no enough coins for pay mining reward')
+				logger.error('No enough coins for pay mining_reward')
+				return False
+
 			if self.pending_transactions:
 				block = Block(len(self.chain), self.pending_transactions, 
 							self.chain[-1].hash, metadata={
@@ -370,13 +394,20 @@ class BlockChain:
 								'action': 'mine'
 							}
 				)
+				
 				block.mine(self.config.difficulty)
+				
 				self.add_block(block)
 
 				logger.info(f'Wallet {wallet.public_key.to_string().hex()} mined a new block: {block.hash.hex()}')
 
+				self.total_mined_coins += self.config.mining_reward
 				wallet.balance += self.config.mining_reward
-				self.remaining_supply = self.get_remaining_supply()
+
+				self.remaining_supply -= self.config.mining_reward
+
+				self.set_remaining_supply()
+				self.update_mining_settings()
 			else:
 				logger.debug('No pending transactions to mine')
 		else:
@@ -384,28 +415,36 @@ class BlockChain:
 			logger.warning(f'Consensus algorithm {self.config.consensus_algorithm.value} is not implemented yet.')
 			return None
 
-	def get_remaining_supply(self) -> float:
+	def update_mining_settings(self) -> None:
 		"""
-		Метод для получения остатка невыпущенных монет в сети блокчейна
+		Обновление настроек майнинга - награды и сложности.
 
-		:return: Остаток монет
+		Вознаграждение майнера меняется по следующему алгоритму:
+		 1. Вычисляется влияние инфляции на награду
+		 2. Из награждения минусуется влияние деленное на общее количество добытых монет
+
+		Сложность меняется по следующему алгоритму:
+		 1. Вычисляется прошедшее время - из текущего времени отнимается время 
+		 	последнего обновления. Переводится в секунды.
+		 2. Если прошедшее время меньше чем заданное время для обновления сложности,
+		 	то сложность увеличивается на 1.
+		 3. Если сложность заняла больше времени, чем положено, то сложность,
+		 	наоборот, уменьшается
 		"""
-		total_supply = sum(tx.amount for block in self.chain for tx in block.transactions)
-		return self.config.total_supply - total_supply
+		tokens = self.config.mining_reward * self.config.inflation_rate
+		self.config.mining_reward -= tokens / self.total_mined_coins
 
-	def get_wallet(self, public_key: bytes) -> Wallet:
-		"""
-		Получение кошелька в блокчейне по его публичному ключу.
+		logger.debug(f'Update miner reward. Current mining reward = {self.config.mining_reward}')
 
-		:param public_key: Публичный ключ кошелька
+		elapsed_time = (datetime.now() - self.last_update_time).total_seconds()
+		self.last_update_time = datetime.now()
 
-		:return: Кошелёк, либо None
-		"""
-		for wallet in self.wallets:
-			if wallet.public_key == public_key:
-				return wallet
-
-		return None
+		if elapsed_time < self.config.difficulty_update_time:
+			self.config.difficulty += 1
+			logger.debug(f'Update difficulty (+1). Current difficulty = {self.config.difficulty}')
+		elif elapsed_time > self.config.difficulty_update_time:
+			self.config.difficulty = max(self.config.difficulty - 1, 1)
+			logger.debug(f'Update difficulty. Current difficulty = {self.config.difficulty}')
 
 	def create_wallet(self, name: str, initial_balance: float) -> Wallet:
 		"""
@@ -417,6 +456,14 @@ class BlockChain:
 		:return: Новый зарегистрированный кошелёк
 		"""
 		wallet: Wallet = Wallet(name, initial_balance)
+
+		if wallet.balance > self.remaining_supply:
+			logger.critical('Impossible to register a wallet: the initial balance exceeds remaining tokens in network.')
+			return None
+		else:
+			self.remaining_supply -= wallet.balance
+			self.set_remaining_supply()
+
 		self.wallets.append(wallet)
 
 		logger.info(f'New wallet has been registered: {wallet.public_key.to_string().hex()}')
@@ -443,6 +490,7 @@ class BlockChain:
 		if sender_wallet and recipient_wallet:
 			logger.info(f'Transfer transaction: {transaction.amount} {self.config.coin_name} from {transaction.sender_wallet.to_string().hex()} -> {transaction.recipient_wallet.to_string().hex()}')
 			recipient_wallet.receive_transaction(transaction)
+			self.remaining_supply += transaction.fee
 
 			self.pending_transactions.append(transaction)
 			self.add_block(Block(len(self.chain), 
@@ -453,6 +501,93 @@ class BlockChain:
 								'action': 'transfer',
 								'recipient': recipient_wallet.public_key.to_string().hex()
 							}))
+			transaction.status = TransactionStatus.CONFIRMED
+			self.get_wallet(sender_wallet.public_key).transactions_history[f'{transaction.signature.hex()}'] = {
+				'recipient': recipient_wallet.public_key,
+				'status': transaction.status
+			}
+			self.set_remaining_supply()
 			return True
 		else:
+			logger.warning(f'FAILED | Transfer transaction is failed: {transaction.amount} {self.config.coin_name} from {transaction.sender_wallet.to_string().hex()} -> {transaction.recipient_wallet.to_string().hex()}')
+			transaction.status = TransactionStatus.FAILED
+			self.get_wallet(sender_wallet.public_key).transactions_history[f'{transaction.signature.hex()}'] = {
+				'recipient': recipient_wallet.public_key,
+				'status': transaction.status
+			}
 			return False
+
+	def validate_chain(self) -> bool:
+		"""
+		Метод проверки цепи блоков.
+
+		Сверяется предыдущий хеш текущего блока и хеш предыдущего блока.
+
+		:return: True если цепь валидна, False в противном случае
+		"""
+		try:
+			for i in range(1, len(self.chain)):
+				current_block = self.chain[i]
+				previous_block = self.chain[i - 1]
+
+				if current_block.previous_hash != previous_block.hash:
+					return False
+
+			logger.debug('Validating chain: no errors')
+
+			return True
+		except Exception as ex:
+			logger.error(f'Error when validate chain: {ex}')
+			return False
+
+	def set_remaining_supply(self) -> None:
+		"""
+		Метод для получения остатка невыпущенных монет в сети блокчейна
+
+		:return: Остаток монет
+		"""
+		transaction_supply = sum(tx.amount for block in self.chain for tx in block.transactions)
+		total_supply = self.max_supply - transaction_supply
+		new_tokens = total_supply * self.inflation_rate
+		inflation_fee = self.transaction_fee * self.inflation_rate
+
+		self.max_supply += new_tokens
+		self.remaining_supply += new_tokens
+		self.transaction_fee += inflation_fee
+
+	def get_full_info(self) -> dict:
+		"""
+		Получение некоторой информации о блокчейне.
+
+		Возвращает список из текущего максимального числа монет, текущего
+		остатка монет в сети, общий баланс всех кошельков и процент
+		соотношения остатка монет в сети к общему балансу всех кошельков.
+		"""
+		total_wallets_balance: int = 0
+
+		for wallet in self.wallets:
+			total_wallets_balance += wallet.balance
+
+		remaining_supply = self.max_supply - total_wallets_balance
+		remaining_supply_percentage = (remaining_supply / self.max_supply) * 100
+
+		return {
+			'current_max_supply': self.max_supply,
+			'current_remaining_supply': self.remaining_supply,
+			'total_wallets_balance': total_wallets_balance,
+			'remaining_supply_percentage': remaining_supply_percentage,
+		}
+
+	def get_wallet(self, public_key: bytes) -> Wallet:
+		"""
+		Получение кошелька в блокчейне по его публичному ключу.
+
+		:param public_key: Публичный ключ кошелька
+
+		:return: Кошелёк, либо None
+		"""
+		for wallet in self.wallets:
+			if wallet.public_key == public_key:
+				return wallet
+
+		return None
