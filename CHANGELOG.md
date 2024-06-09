@@ -1,3 +1,9 @@
+commit cf3ed3570f716312647f0b25d7c2a1ca307e9cee
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Mon Jun 10 00:12:00 2024 +0700
+
+    docs/feat: add inflation model, improve mine block system and fix all erros
+
 commit 258032eab6a4d6cbe6b48f107dfbf561f1aa70f2
 Author: AlexeevDeveloper <alexeev.developer@gmail.com>
 Date:   Sat Jun 8 01:43:26 2024 +0700
