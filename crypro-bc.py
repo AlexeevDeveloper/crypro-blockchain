@@ -23,15 +23,16 @@ License along with this library; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 """
 from blockchain import BlockChainConfig, BlockChain, ConsensusAlgorithm
+from decimal import Decimal
 
 config = BlockChainConfig(
 	coin_name="CPNC",
-	max_supply=100.0,
-	mining_reward=10.0,
+	max_supply=120.9,
+	mining_reward=1.0,
 	difficulty=0,
 	consensus_algorithm=ConsensusAlgorithm.PROOF_OF_WORK,
-	transaction_fee=1.5,
-	inflation_rate=0.02,
+	transaction_fee=1.0,
+	inflation_rate=0.01,
 	difficulty_update_time=60
 )
 
@@ -61,3 +62,12 @@ print(f'Сложность майнинга и награда майнинга: 
 print(f'Комиссия за транзакцию: {blockchain.transaction_fee}')
 print(f'Рост инфляции: {blockchain.inflation_rate}')
 print(f'Цепь: {blockchain.validate_chain()}')
+print(f'Максимальный порог: {blockchain.economic_model.get_max_threshold()}')
+print(f'Минимальный порог: {blockchain.economic_model.get_min_threshold()}')
+
+print(f'Монеты: {blockchain.remaining_supply}')
+blockchain.remaining_supply += 45
+print(f'Монеты: {blockchain.remaining_supply}')
+blockchain.economic_influence()
+print(f'Монеты: {blockchain.remaining_supply}')
+print(f'Рост инфляции: {blockchain.inflation_rate}')

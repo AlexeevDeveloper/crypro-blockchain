@@ -20,11 +20,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 from datetime import datetime
 from hashlib import sha256
 from typing import List, Tuple, Optional, Dict
-from dataclasses import dataclass
-from enum import Enum
 import logging
 import os
 from time import time
+from core.configs import BlockChainConfig, TransactionStatus, ConsensusAlgorithm
+from core.economics import EconomicModel
 import ecdsa
 
 # Настройка логирования #
@@ -47,64 +47,6 @@ file_handler.setFormatter(formatter)
 # Применяем настройки
 logger.addHandler(file_handler)
 # Конец настройки логирования #
-
-
-class ConsensusAlgorithm(Enum):
-	"""
-	Перечисление доступных алгоритмов консенсуса.
-
-	На данный момент поддерживаются следующие виды механизма консенсуса:
-	 + Proof of Work - алгоритм, в котором участники сети соревнуются в решении
-	 	вычислительно-сложной задачи. Цель этой задачи - найти значение
-	 	нонса, которое, когда объединено с другими данным блока, дает хеш,
-	 	удолетворяющий определенному критерию сложности. Этот критерий
-	 	обычно требует, чтобы хеш начинался с определенного кол-ва нулей.
-	 + Proof of Stake - альтернативный алгоритм, в котором участники сети
-	 	(валидаторы) ставят на кон (блокируют) свои токены, чтобы иметь 
-	 	право добавлять новые блоки в блокчейн. Вместо вычислительной мощи, PoS
-	 	использует долю в сети (кол-во заблокированных токенов) для определения,
-	 	кто должен добавить следующий блок.
-	"""
-	PROOF_OF_WORK: str = "proof_of_work"
-	PROOF_OF_STAKE: str = "proof_of_stake"
-
-
-class TransactionStatus(Enum):
-	"""
-	Статус транзакции.
-
-	 + PENDING/в обработке - 1
-	 + CONFIRMED/подтвержден - 2
-	 + FAILED/провал - 3
-	"""
-	PENDING = 1
-	CONFIRMED = 2
-	FAILED = 3
-
-
-@dataclass
-class BlockChainConfig:
-	"""
-	Конфигурация блокчейна.
-
-	Параметры:
-	 + Название монеты
-	 + Общее количество выпущенных монет
-	 + Награда для майнеров
-	 + Сложность добычи блоков
-	 + Алгоритм консенсуса
-	 + Комиссия за транзакцию
-	 + Рост инфляции
-	 + Максимальное время добычи блока для обновления сложности (в секундах)
-	"""
-	coin_name: str
-	max_supply: float
-	mining_reward: float = 10.0
-	difficulty: int = 2
-	consensus_algorithm: ConsensusAlgorithm = ConsensusAlgorithm.PROOF_OF_WORK
-	transaction_fee: float = 1.0
-	inflation_rate: float = 0.02
-	difficulty_update_time: int = 60
 
 
 class Wallet:
@@ -344,8 +286,11 @@ class BlockChain:
 		self.max_supply: float = self.config.max_supply
 		self.transaction_fee: float = self.config.transaction_fee
 		self.inflation_rate: float = self.config.inflation_rate
+		self.difficulty: int = self.config.difficulty
+		self.mining_reward: float = self.config.mining_reward
 		self.total_mined_coins: int = 0
 		self.last_update_time = datetime.now()
+		self.economic_model = EconomicModel(self)
 
 	def create_genesis_block(self) -> Block:
 		"""
@@ -401,12 +346,12 @@ class BlockChain:
 
 				logger.info(f'Wallet {wallet.public_key.to_string().hex()} mined a new block: {block.hash.hex()}')
 
-				self.total_mined_coins += self.config.mining_reward
-				wallet.balance += self.config.mining_reward
+				self.total_mined_coins += self.mining_reward
+				wallet.balance += self.mining_reward
+				self.inflation_rate += 0.001
+				self.remaining_supply -= self.mining_reward
 
-				self.remaining_supply -= self.config.mining_reward
-
-				self.set_remaining_supply()
+				self.economic_influence()
 				self.update_mining_settings()
 			else:
 				logger.debug('No pending transactions to mine')
@@ -431,20 +376,20 @@ class BlockChain:
 		 3. Если сложность заняла больше времени, чем положено, то сложность,
 		 	наоборот, уменьшается
 		"""
-		tokens = self.config.mining_reward * self.config.inflation_rate
-		self.config.mining_reward -= tokens / self.total_mined_coins
+		tokens = self.mining_reward * self.inflation_rate
+		self.mining_reward -= tokens / self.total_mined_coins
 
-		logger.debug(f'Update miner reward. Current mining reward = {self.config.mining_reward}')
+		logger.debug(f'Update miner reward. Current mining reward = {self.mining_reward}')
 
 		elapsed_time = (datetime.now() - self.last_update_time).total_seconds()
 		self.last_update_time = datetime.now()
 
 		if elapsed_time < self.config.difficulty_update_time:
-			self.config.difficulty += 1
-			logger.debug(f'Update difficulty (+1). Current difficulty = {self.config.difficulty}')
+			self.difficulty += 1
+			logger.debug(f'Update difficulty (+1). Current difficulty = {self.difficulty}')
 		elif elapsed_time > self.config.difficulty_update_time:
-			self.config.difficulty = max(self.config.difficulty - 1, 1)
-			logger.debug(f'Update difficulty. Current difficulty = {self.config.difficulty}')
+			self.difficulty = max(self.difficulty - 1, 1)
+			logger.debug(f'Update difficulty. Current difficulty = {self.difficulty}')
 
 	def create_wallet(self, name: str, initial_balance: float) -> Wallet:
 		"""
@@ -462,7 +407,7 @@ class BlockChain:
 			return None
 		else:
 			self.remaining_supply -= wallet.balance
-			self.set_remaining_supply()
+			self.economic_influence()
 
 		self.wallets.append(wallet)
 
@@ -506,7 +451,7 @@ class BlockChain:
 				'recipient': recipient_wallet.public_key,
 				'status': transaction.status
 			}
-			self.set_remaining_supply()
+			self.economic_influence()
 			return True
 		else:
 			logger.warning(f'FAILED | Transfer transaction is failed: {transaction.amount} {self.config.coin_name} from {transaction.sender_wallet.to_string().hex()} -> {transaction.recipient_wallet.to_string().hex()}')
@@ -540,11 +485,18 @@ class BlockChain:
 			logger.error(f'Error when validate chain: {ex}')
 			return False
 
-	def set_remaining_supply(self) -> None:
+	def economic_influence(self) -> None:
 		"""
-		Метод для получения остатка невыпущенных монет в сети блокчейна
+		Метод для поддержки влияния экономических моделей на блокчейн.
 
-		:return: Остаток монет
+		1. Инфляция влияет на максимальное количество монет
+		2. Инфляция влияет на количество монет в сети
+		3. Инфляция влияет на комиссию на транзакции
+		4. Авторегулирование количества монет:
+			+ Создание, если монет слишком мало (меньше минимального предела)
+			+ Сжигание, если монет слишком много (больше максимального предела)
+		5. Авторегулирование инфляции:
+			Приближает значение инфляции к заданному, если оно отходит от оригинального
 		"""
 		transaction_supply = sum(tx.amount for block in self.chain for tx in block.transactions)
 		total_supply = self.max_supply - transaction_supply
@@ -554,6 +506,11 @@ class BlockChain:
 		self.max_supply += new_tokens
 		self.remaining_supply += new_tokens
 		self.transaction_fee += inflation_fee
+
+		if self.economic_model.check_need_tokens():
+			self.economic_model.manage_tokens()
+
+		self.inflation_rate = self.economic_model.adjust_inflantion_rate(self.inflation_rate)
 
 	def get_full_info(self) -> dict:
 		"""

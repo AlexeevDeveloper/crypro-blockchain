@@ -1,3 +1,9 @@
+commit 262c63a8ccb43cbbfe51772e1a732d1da3834c53
+Author: AlexeevDeveloper <alexeev.developer@gmail.com>
+Date:   Mon Jun 10 00:17:34 2024 +0700
+
+    docs: update changelog and reamde
+
 commit cf3ed3570f716312647f0b25d7c2a1ca307e9cee
 Author: AlexeevDeveloper <alexeev.developer@gmail.com>
 Date:   Mon Jun 10 00:12:00 2024 +0700
